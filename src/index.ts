@@ -5,6 +5,7 @@ import { QueueService } from './services/QueueService';
 import { StorageService } from './services/StorageService';
 import { AIService } from './services/AIService';
 import { ServicesInvocationService } from './services/ServicesInvocationService';
+import { RealtimeService } from './services/RealtimeService';
 
 export class Aerostack {
   apiKey: string;
@@ -17,6 +18,7 @@ export class Aerostack {
   storage: StorageService;
   ai: AIService;
   servicesInvocation: ServicesInvocationService;
+  realtime: RealtimeService;
 
   constructor(apiKey: string, baseUrl = 'https://api.aerostack.ai/v1') {
     if (!apiKey.startsWith('ac_secret_')) {
@@ -33,5 +35,6 @@ export class Aerostack {
     this.storage = new StorageService(this.apiKey, this.baseUrl);
     this.ai = new AIService(this.apiKey, this.baseUrl);
     this.servicesInvocation = new ServicesInvocationService(this.apiKey, this.baseUrl);
+    this.realtime = new RealtimeService(this.apiKey, this.baseUrl);
   }
 }
