@@ -20,7 +20,7 @@ yarn add @aerostack/sdk-react-native
 import { Aerostack } from '@aerostack/sdk-react-native';
 
 const client = new Aerostack({
-  projectUrl: 'https://your-project.aerostack.app',
+  projectUrl: 'https://your-project.aerostack.dev',
   apiKey: 'your-public-api-key',
 });
 ```
@@ -48,4 +48,4 @@ const users = await client.db.query('SELECT * FROM users LIMIT 5');
 
 ## Documentation
 
-For full documentation, visit [docs.aerostack.ai](https://docs.aerostack.ai/sdk/react-native).
+For full documentation, visit [docs.aerostack.dev](https://docs.aerostack.dev/sdk/react-native).
