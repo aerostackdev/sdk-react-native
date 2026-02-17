@@ -1,6 +1,6 @@
 {
   "name": "@aerostack/sdk-react-native",
-  "version": "0.3.2",
+  "version": "0.3.6",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aerostackdev/sdks.git",
