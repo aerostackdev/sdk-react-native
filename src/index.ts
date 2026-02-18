@@ -7,6 +7,9 @@ import { AIService } from './services/AIService';
 import { ServicesInvocationService } from './services/ServicesInvocationService';
 import { RealtimeService } from './services/RealtimeService';
 
+export { AerocallClient } from "@aerostack/core";
+export type { AerocallConfig } from "@aerostack/core";
+
 export class Aerostack {
   apiKey: string;
   baseUrl: string;

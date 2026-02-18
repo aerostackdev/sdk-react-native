@@ -1,6 +1,6 @@
 {
   "name": "@aerostack/sdk-react-native",
-  "version": "0.3.6",
+  "version": "0.4.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/aerostackdev/sdks.git",
@@ -17,7 +17,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "axios": "^1.4.0"
+    "axios": "^1.4.0",
+    "@aerostack/core": "file:../../../packages/core"
   },
   "devDependencies": {
     "@types/node": "^18.17.0",
