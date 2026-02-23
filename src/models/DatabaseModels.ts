@@ -1,9 +1,4 @@
-export interface DbQueryRequest {
-  sql: string;
-  params?: any[];
-}
-
-export interface DbQueryResponse {
+export interface DbQueryResult {
   results: object[];
   count: number;
 }
