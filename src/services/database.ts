@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { DbQueryResult } from '../models/databaseModels';
+import { DbQueryResult } from '../models/DatabaseModels';
 
 interface Config {
   apiKey: string;
