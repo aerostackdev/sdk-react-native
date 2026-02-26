@@ -11,13 +11,23 @@ export interface RealtimeSubscriptionOptions {
     filter?: Record<string, any>;
 }
 
-export type RealtimeCallback = (payload: any) => void;
+export type RealtimeCallback<T = any> = (payload: RealtimePayload<T>) => void;
 
-export class RealtimeSubscription {
+export interface RealtimePayload<T = any> {
+    type: 'db_change' | 'chat_message';
+    topic: string;
+    operation: RealtimeEvent;
+    data: T;
+    old?: T;
+    timestamp?: string;
+    [key: string]: any;
+}
+
+export class RealtimeSubscription<T = any> {
     private service: RealtimeService;
     private topic: string;
     private options: RealtimeSubscriptionOptions;
-    private callbacks: Set<RealtimeCallback> = new Set();
+    private callbacks: Map<RealtimeEvent, Set<RealtimeCallback<T>>> = new Map();
     private isSubscribed: boolean = false;
 
     constructor(service: RealtimeService, topic: string, options: RealtimeSubscriptionOptions = {}) {
@@ -26,8 +36,11 @@ export class RealtimeSubscription {
         this.options = options;
     }
 
-    on(event: RealtimeEvent, callback: RealtimeCallback): this {
-        this.callbacks.add(callback);
+    on(event: RealtimeEvent, callback: RealtimeCallback<T>): this {
+        if (!this.callbacks.has(event)) {
+            this.callbacks.set(event, new Set());
+        }
+        this.callbacks.get(event)!.add(callback);
         return this;
     }
 
@@ -53,37 +66,73 @@ export class RealtimeSubscription {
     }
 
     /** @internal */
-    _emit(payload: any): void {
+    _emit(payload: RealtimePayload<T>): void {
         const event = payload.operation as RealtimeEvent;
-        const requestedEvent = this.options.event || '*';
-
-        if (requestedEvent === '*' || requestedEvent === event) {
-            for (const cb of this.callbacks) {
-                cb(payload);
-            }
-        }
+        this.callbacks.get(event)?.forEach(cb => cb(payload));
+        this.callbacks.get('*')?.forEach(cb => cb(payload));
     }
 }
+
+export type RealtimeStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
 export class RealtimeService {
     private baseUrl: string;
     private apiKey: string;
+    private projectId: string;
     private ws: WebSocket | null = null;
     private subscriptions: Map<string, RealtimeSubscription> = new Map();
     private reconnectTimer: any = null;
     private heartbeatTimer: any = null;
     private reconnectAttempts: number = 0;
-    private projectId: string = '';
+    private _sendQueue: any[] = [];
+    private _connectingPromise: Promise<void> | null = null;
+    private _status: RealtimeStatus = 'idle';
+    private _statusListeners: Set<(s: RealtimeStatus) => void> = new Set();
+    private _lastPong: number = 0;
+    private _maxReconnectAttempts: number;
+    private _maxRetriesListeners: Set<() => void> = new Set();
+    private _appStateSubscription: any = null;
 
-    constructor(apiKey: string, baseUrl: string) {
-        // Convert https://api.aerostack.ai/v1 to ws://api.aerostack.ai/realtime
-        this.baseUrl = baseUrl.replace('/v1', '').replace(/^http/, 'ws') + '/realtime';
+    constructor(apiKey: string, baseUrl: string, projectId: string = '', maxReconnectAttempts: number = Infinity) {
+        const wsBase = baseUrl.replace(/\/v1\/?$/, '').replace(/^http/, 'ws');
+        this.baseUrl = `${wsBase}/api/realtime`;
         this.apiKey = apiKey;
+        this.projectId = projectId;
+        this._maxReconnectAttempts = maxReconnectAttempts;
+    }
+
+    get status(): RealtimeStatus { return this._status; }
+
+    onStatusChange(cb: (status: RealtimeStatus) => void): () => void {
+        this._statusListeners.add(cb);
+        return () => this._statusListeners.delete(cb);
+    }
+
+    onMaxRetriesExceeded(cb: () => void): () => void {
+        this._maxRetriesListeners.add(cb);
+        return () => this._maxRetriesListeners.delete(cb);
+    }
+
+    private _setStatus(s: RealtimeStatus) {
+        this._status = s;
+        this._statusListeners.forEach(cb => cb(s));
+    }
+
+    setToken(newToken: string): void {
+        this._send({ type: 'auth', token: newToken });
     }
 
     async connect(): Promise<void> {
-        if (this.ws) return;
+        if (this.ws && this._status === 'connected') return;
+        if (this._connectingPromise) return this._connectingPromise;
+        this._connectingPromise = this._doConnect().finally(() => {
+            this._connectingPromise = null;
+        });
+        return this._connectingPromise;
+    }
 
+    private _doConnect(): Promise<void> {
+        this._setStatus('connecting');
         return new Promise((resolve, reject) => {
             const url = new URL(this.baseUrl);
             url.searchParams.set('apiKey', this.apiKey);
@@ -91,10 +140,14 @@ export class RealtimeService {
             this.ws = new WebSocket(url.toString());
 
             this.ws.onopen = () => {
-                console.log('Aerostack Realtime Connected');
+                this._setStatus('connected');
                 this.reconnectAttempts = 0;
+                this._lastPong = Date.now();
                 this.startHeartbeat();
-                // Re-subscribe to existing topics
+                this._setupAppState();
+                while (this._sendQueue.length > 0) {
+                    this.ws!.send(JSON.stringify(this._sendQueue.shift()));
+                }
                 for (const sub of this.subscriptions.values()) {
                     sub.subscribe();
                 }
@@ -103,7 +156,7 @@ export class RealtimeService {
 
             this.ws.onmessage = (event) => {
                 try {
-                    const data = JSON.parse(event.data);
+                    const data = JSON.parse(typeof event.data === 'string' ? event.data : '{}');
                     this.handleMessage(data);
                 } catch (e) {
                     console.error('Realtime message parse error:', e);
@@ -111,7 +164,7 @@ export class RealtimeService {
             };
 
             this.ws.onclose = () => {
-                console.log('Aerostack Realtime Disconnected');
+                this._setStatus('reconnecting');
                 this.stopHeartbeat();
                 this.ws = null;
                 this.scheduleReconnect();
@@ -119,60 +172,86 @@ export class RealtimeService {
 
             this.ws.onerror = (err) => {
                 console.error('Realtime connection error:', err);
+                this._setStatus('disconnected');
                 reject(err);
             };
         });
     }
 
     disconnect() {
+        this._setStatus('disconnected');
+        this.stopReconnect();
+        this.stopHeartbeat();
+        this._teardownAppState();
         if (this.ws) {
             this.ws.close();
+            this.ws = null;
         }
-        this.stopReconnect();
+        this._sendQueue = [];
     }
 
-    channel(topic: string, options: RealtimeSubscriptionOptions = {}): RealtimeSubscription {
-        // If it's just a table name, we need the projectId. 
-        // In RN SDK, we might need a way to get projectId from apiKey or have it passed.
-        // Assuming for now the topic is already full or we'll fix backend to handle table names with apiKey context.
-
-        let sub = this.subscriptions.get(topic);
+    channel<T = any>(topic: string, options: RealtimeSubscriptionOptions = {}): RealtimeSubscription<T> {
+        const fullTopic = topic.includes('/') ? topic : `table/${topic}/${this.projectId}`;
+        let sub = this.subscriptions.get(fullTopic);
         if (!sub) {
-            sub = new RealtimeSubscription(this, topic, options);
-            this.subscriptions.set(topic, sub);
+            sub = new RealtimeSubscription<T>(this, fullTopic, options);
+            this.subscriptions.set(fullTopic, sub);
         }
-        return sub;
+        return sub as RealtimeSubscription<T>;
+    }
+
+    sendChat(roomId: string, text: string): void {
+        this._send({ type: 'chat', roomId, text });
+    }
+
+    chatRoom(roomId: string): RealtimeSubscription {
+        return this.channel(`chat/${roomId}/${this.projectId}`);
     }
 
     /** @internal */
     _send(data: any) {
-        if (this.ws && this.ws.readyState === 1) { // 1 is OPEN
+        if (this.ws && this._status === 'connected') {
             this.ws.send(JSON.stringify(data));
+        } else {
+            this._sendQueue.push(data);
         }
     }
 
     private handleMessage(data: RealtimeMessage) {
+        if (data.type === 'pong') {
+            this._lastPong = Date.now();
+            return;
+        }
         if (data.type === 'db_change' || data.type === 'chat_message') {
             const sub = this.subscriptions.get(data.topic);
-            if (sub) {
-                sub._emit(data);
-            }
+            if (sub) sub._emit(data as any);
         }
     }
 
     private startHeartbeat() {
         this.heartbeatTimer = setInterval(() => {
             this._send({ type: 'ping' });
+            if (this._lastPong > 0 && Date.now() - this._lastPong > 70000) {
+                console.warn('Realtime: no pong received, forcing reconnect');
+                this.ws?.close();
+            }
         }, 30000);
     }
 
     private stopHeartbeat() {
-        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+        if (this.heartbeatTimer) {
+            clearInterval(this.heartbeatTimer);
+            this.heartbeatTimer = null;
+        }
     }
 
-    /** Exponential backoff with jitter: 1s → 2s → 4s → ... → 30s */
     private scheduleReconnect() {
         this.stopReconnect();
+        if (this.reconnectAttempts >= this._maxReconnectAttempts) {
+            this._setStatus('disconnected');
+            this._maxRetriesListeners.forEach(cb => cb());
+            return;
+        }
         const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
         const jitter = delay * 0.3 * Math.random();
         this.reconnectAttempts++;
@@ -182,6 +261,33 @@ export class RealtimeService {
     }
 
     private stopReconnect() {
-        if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+    }
+
+    // B9: React Native AppState integration
+    private _setupAppState() {
+        try {
+            const { AppState } = require('react-native');
+            this._appStateSubscription = AppState.addEventListener('change', (state: string) => {
+                if (state === 'active' && this._status !== 'connected') {
+                    this.reconnectAttempts = 0;
+                    this.connect().catch(() => { });
+                } else if (state === 'background') {
+                    this.stopReconnect();
+                }
+            });
+        } catch {
+            // Not in React Native environment — skip
+        }
+    }
+
+    private _teardownAppState() {
+        if (this._appStateSubscription) {
+            this._appStateSubscription.remove();
+            this._appStateSubscription = null;
+        }
     }
 }
