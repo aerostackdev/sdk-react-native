@@ -84,7 +84,7 @@ export class RealtimeSubscription<T = any> {
 
 export type RealtimeStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
-export interface RealtimeClientOptions { projectId?: string; } {
+export interface RealtimeClientOptions {
     baseUrl: string;
     apiKey?: string;
     token?: string;
