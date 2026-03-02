@@ -10,7 +10,7 @@ import { Aerostack } from '@aerostack/react-native';
 
 // Initialize SDK
 const sdk = new Aerostack({
-    // baseURL: 'https://api.aerostack.ai/v1' // Optional
+    // baseURL: 'https://api.aerocall.ai/v1' // Optional
 });
 
 export default function LoginScreen() {

@@ -22,7 +22,7 @@ export class AerostackSDK {
   public servicesInvoker: ServicesInvoker;
   public realtime: RealtimeService;
 
-  constructor(private readonly apiKey: string, private readonly baseUrl: string, projectId: string = '') {
+  constructor(private readonly apiKey: string, private readonly baseUrl: string = 'https://api.aerocall.ai/v1', projectId: string = '') {
     const config = { apiKey, baseUrl };
     this.auth = new AuthService(config);
     this.database = new DatabaseService(config);
