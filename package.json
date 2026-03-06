@@ -8,7 +8,7 @@
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
-    "@aerostack/sdk-web": "^0.7.8"
+    "@aerostack/sdk-web": "^0.7.9"
   },
   "devDependencies": {
     "typescript": "^5.1.6",
