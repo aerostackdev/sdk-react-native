@@ -1,6 +1,6 @@
 {
   "name": "@aerostack/sdk-react-native",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Aerostack SDK for React Native",
   "main": "dist/index.js",
   "scripts": {
@@ -8,7 +8,7 @@
     "test": "jest --passWithNoTests"
   },
   "dependencies": {
-    "@aerostack/sdk-web": "^0.8.0"
+    "@aerostack/sdk-web": "^0.8.1"
   },
   "devDependencies": {
     "typescript": "^5.1.6",
