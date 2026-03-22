@@ -1,6 +1,6 @@
 {
   "name": "@aerostack/sdk-react-native",
-  "version": "0.8.13",
+  "version": "0.10.0",
   "description": "Aerostack SDK for React Native",
   "main": "dist/index.js",
   "scripts": {
